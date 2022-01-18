@@ -1,0 +1,5 @@
+setup.py
+miscell.egg-info/PKG-INFO
+miscell.egg-info/SOURCES.txt
+miscell.egg-info/dependency_links.txt
+miscell.egg-info/top_level.txt
