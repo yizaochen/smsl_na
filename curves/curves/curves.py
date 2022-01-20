@@ -1,4 +1,8 @@
-from os import path
+from os import path, remove
+import subprocess
+from glob import glob
+from shutil import move
+import MDAnalysis as mda
 from miscell.file_util import check_dir_exist_and_make, check_file_exist, copy_verbose
 from miscell.na_bp import d_n_bp
 from pdb_util.pdb import PDBReader, PDBWriter
@@ -63,5 +67,79 @@ class PreliminaryAgent:
                     
             writer = PDBWriter(self.input_pdb, atgs)
             writer.write_pdb()
+
+class ExtractPDBAgent(PreliminaryAgent):
+    def __init__(self, rootfolder, host):
+        super().__init__(rootfolder, host)
+        self.u = mda.Universe(self.input_pdb, self.input_xtc)
+
+    def get_n_frames(self):
+        return len(self.u.trajectory)
+
+    def print_n_frames(self):
+        n_frame = self.get_n_frames()
+        print(f'n_frame: {n_frame}')
+        
+    def extract_pdb_from_xtc(self, start_frame, stop_frame):
+        for ts in self.u.trajectory[start_frame:stop_frame]:
+            pdb_out = path.join(self.single_pdb_folder, f'{ts.frame}.pdb')
+            self.process_single_frame(pdb_out)
+            if ts.frame % 500 == 0:
+                print(f'Extract PDB for {self.host}, Frame-ID: {ts.frame}')
+
+    def process_single_frame(self, pdb_out):
+        with mda.Writer(pdb_out, bonds=None, n_atoms=self.u.atoms.n_atoms) as PDBOUT:
+            PDBOUT.write(self.u.atoms)
+
+class ExecCurvesAgent(ExtractPDBAgent):
+    lis_name = 'r+bdna'
+
+    def execute_curve_plus(self, start_frame, stop_frame):
+        for frame_id in range(start_frame, stop_frame):
+            self.clean_files()
+            f_single_pdb = path.join(self.single_pdb_folder, f'{frame_id}.pdb')  
+            # Start to execute curves
+            cmd = self.get_exectue_curve_plus_cmd(f_single_pdb)
+            errlog = open(path.join(self.workspace_folder, 'err.log'), 'w')
+            outlog = open(path.join(self.workspace_folder, 'out.log'), 'w')
+            subprocess.run(cmd, shell=True, stdout=outlog, stderr=errlog,check=False)
+            errlog.close()
+            outlog.close()
+            # Store .lis and _X.pdb files
+            workspace_lis = path.join(self.workspace_folder, f'{self.lis_name}.lis')
+            workspace_pdb = path.join(self.workspace_folder, f'{self.lis_name}_X.pdb')
+            f_lis = path.join(self.lis_folder, f'{frame_id}.lis')
+            f_x_pdb = path.join(self.haxis_smooth_folder, f'{frame_id}.pdb')
+            move(workspace_lis, f_lis)
+            move(workspace_pdb, f_x_pdb)
+            if frame_id % 500 == 0:
+                print(f'Curves+ for {self.host}, Frame-ID: {frame_id}')
+
+    def clean_files(self):
+        pathname = path.join(self.workspace_folder, f'{self.lis_name}*')
+        filelist = glob(pathname)
+        if len(filelist) != 0:
+            for fname in filelist:
+                remove(fname)
+
+    def get_exectue_curve_plus_cmd(self, f_single_pdb):
+        curve = '/home/yizaochen/opt/curves+/Cur+'
+        inp_end_txt = self.get_inp_end(f_single_pdb)
+        n1, n2, n3, n4 = self.get_four_numbers()
+        cmd1 = f'{curve} <<!\n'
+        cmd2 = f'  &inp {inp_end_txt}&end\n'
+        cmd3 = '2 1 -1 0 0\n'
+        cmd4 = f'{n1}:{n2}\n'
+        cmd5 = f'{n3}:{n4}\n'
+        cmd6 = '!'
+        return cmd1 + cmd2 + cmd3 + cmd4 + cmd5 + cmd6
+
+    def get_inp_end(self, f_single_pdb):
+        curve_folder = '/home/yizaochen/opt/curves+/standard'
+        lis = path.join(self.workspace_folder, self.lis_name)
+        return f'file={f_single_pdb},\n  lis={lis},\n  lib={curve_folder},\n naxlim=3'
+    
+    def get_four_numbers(self):
+        return 1, self.n_bp, 2*self.n_bp, self.n_bp+1
 
         
