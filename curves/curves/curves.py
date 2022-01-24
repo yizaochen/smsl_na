@@ -4,11 +4,16 @@ from glob import glob
 from shutil import move
 import MDAnalysis as mda
 from miscell.file_util import check_dir_exist_and_make, check_file_exist, copy_verbose
-from miscell.na_bp import d_n_bp
+from miscell.na_bp import d_n_bp, d_type_na
 from pdb_util.pdb import PDBReader, PDBWriter
 
 
 class PreliminaryAgent:
+    d_new_resname = {'RA5': 'A', 'RA3': 'A', 'RA': 'A',
+                     'RU5': 'U', 'RU3': 'U', 'RU': 'U',
+                     'RC5': 'C', 'RC3': 'C', 'RC': 'C',
+                     'RG5': 'G', 'RG3': 'G', 'RG': 'G'}
+
     def __init__(self, rootfolder, host):
         self.rootfolder = rootfolder
         self.host = host
@@ -55,16 +60,32 @@ class PreliminaryAgent:
         print('Remember to trim the file becuase of PDBReader skip_header=1, skip_footer=1')
         print(f'vim {self.input_pdb}')
 
+    def check_rna_with_modify_resname(self):
+        if self.is_rna():
+            copy_verbose(self.input_pdb, self.input_pdb_backup)
+            reader = PDBReader(self.input_pdb, segid_exist=False)
+            atgs = reader.get_atomgroup()
+            for atom in atgs:
+                self.modify_rna_resname(atom)
+            writer = PDBWriter(self.input_pdb, atgs)
+            writer.write_pdb()
+
+    def is_rna(self):
+        type_na = d_type_na[self.host]
+        return type_na == 'arna+arna'
+
+    def modify_rna_resname(self, atom):
+        new_resname = self.d_new_resname[atom.resname]
+        atom.set_resname(new_resname)
+
     def change_input_pdb_resid(self, execute=False):
         if execute:
             copy_verbose(self.input_pdb, self.input_pdb_backup)
             reader = PDBReader(self.input_pdb, segid_exist=True)
             atgs = reader.get_atomgroup()
-
             for atom in atgs:
                 if atom.segid == 'B':
-                    atom.resid += self.n_bp
-                    
+                    atom.resid += self.n_bp 
             writer = PDBWriter(self.input_pdb, atgs)
             writer.write_pdb()
 
