@@ -30,7 +30,7 @@ class PDBWriter:
         self.fname = fname
         self.atomgroup = atomgroup
 
-    def write_pdb(self):
+    def write_pdb(self, verbose=False):
         f = open(self.fname, 'w')
         f.write('REMARK\n')
         for atomobj in self.atomgroup:
@@ -38,5 +38,6 @@ class PDBWriter:
             f.write(f'{strout}\n')
         f.write('END')
         f.close()
-        print(f'Write PDB: {self.fname}')
+        if verbose:
+            print(f'Write PDB: {self.fname}')
 
