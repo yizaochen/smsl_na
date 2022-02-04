@@ -19,9 +19,13 @@ class Discretizer(FoldersBuilder):
 
     def discretize_haxis_to_pdb(self, start_frame, stop_frame):
         for frame_id in range(start_frame, stop_frame):
-            nodes_atg = self.extract_nodes_in_smooth_haxis(frame_id)
+            nodes_atg = self.extract_nodes_from_smooth_haxis(frame_id)
             self.write_discretized_pdb(frame_id, nodes_atg)
             self.print_progress(frame_id, 500)
+
+    def extract_nodes_from_smooth_haxis(self, frame_id):
+        input_pdb = path.join(self.haxis_smooth_folder, f'{frame_id}.pdb')
+        return NodesExtract(input_pdb, self.n_bp).get_atomgroups()
 
     def write_discretized_pdb(self, frame_id, atom_groups):
         output_pdb = path.join(self.haxis_discretize_folder, f'{frame_id}.pdb')
@@ -31,10 +35,7 @@ class Discretizer(FoldersBuilder):
         if frame_id % interval == 0:
                 print(f'Discretize smooth helical axis for {self.host}, Frame-ID: {frame_id}')
 
-    def extract_nodes_in_smooth_haxis(self, frame_id):
-        input_pdb = path.join(self.haxis_smooth_folder, f'{frame_id}.pdb')
-        return NodesExtract(input_pdb, self.n_bp).get_atomgroups()
-
+    
 class NodesExtract:
     def __init__(self, pdb, n_bp):
         self.pdb = pdb
