@@ -1,7 +1,7 @@
 from os import path
 import MDAnalysis as mda
 from curves.curves_main_util import PreliminaryAgent
-from miscell.file_util import check_dir_exist_and_make
+from miscell.file_util import check_dir_exist_and_make, check_file_exist, copy_verbose
 from pdb_util.atom import Atom
 from pdb_util.pdb import PDBWriter
 class FoldersBuilder(PreliminaryAgent):
@@ -10,6 +10,10 @@ class FoldersBuilder(PreliminaryAgent):
         self.haxis_discretize_folder = path.join(self.host_folder, 'haxis_discretize')
         self.discre_pdb_dcd_folder = path.join(self.host_folder, 'discre_pdb_dcd')
         self.bend_shape_folder = path.join(self.host_folder, 'bend_shape')
+
+        self.dcre_pdb = path.join(self.discre_pdb_dcd_folder, 'discretized.pdb')
+        self.dcre_dcd = path.join(self.discre_pdb_dcd_folder, 'discretized.dcd')
+        self.make_haxis_tcl = '/home/yizaochen/codes/smsl_na/curves/tcl_scripts/make_haxis.tcl'
 
     def initialize_folders(self):
         for folder in [self.haxis_discretize_folder, self.discre_pdb_dcd_folder, self.bend_shape_folder]:
@@ -67,6 +71,26 @@ class NodesExtract:
             return list(atg_sele.positions[-1])
 
 class Compressor(Discretizer):
-    pass
-
     
+    def make_ref_pdb(self):
+        if not check_file_exist(self.dcre_pdb):
+            first_pdb = path.join(self.haxis_discretize_folder, '0.pdb')
+            copy_verbose(first_pdb, self.dcre_pdb)
+
+    def compress_allpdbs_to_dcd(self, start_frame, stop_frame):
+        print('----Enter the following into terminal----')
+        print(f'cd {self.haxis_discretize_folder}')
+        print('vmd')
+        print('----Enter the following into VMD tkconsole----')
+        print(f'source {self.make_haxis_tcl}')
+        print(f'read_all_pdb_files {start_frame} {stop_frame-1}')
+        print(f'animate write dcd {self.dcre_dcd} beg {start_frame} end {stop_frame-1} waitfor all')
+        print('----Finish----')
+
+    def check_result_fit_original_traj(self):
+        print('----Enter the following into terminal----')
+        print(f'vmd -pdb {self.dcre_pdb} {self.dcre_dcd}')
+        print('----Enter the following into VMD tkconsole----')
+        print(f'mol new {self.input_pdb}')
+        print(f'mol addfile {self.input_xtc} type xtc first 0 last -1 step 1 waitfor all 1' )
+        print('----Finish----')
