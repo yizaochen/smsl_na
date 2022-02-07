@@ -7,5 +7,5 @@ setup(name='curves',
       author='Yizao Chen',
       author_email='yizaochen@gmail.com',
       license='MIT',
-      install_requires=[]
+      install_requires=['h5py']
       )
