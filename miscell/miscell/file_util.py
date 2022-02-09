@@ -20,3 +20,4 @@ def check_file_exist(file_path):
 def copy_verbose(f_old, f_new):
     copyfile(f_old, f_new)
     print(f'cp {f_old} {f_new}')
+
