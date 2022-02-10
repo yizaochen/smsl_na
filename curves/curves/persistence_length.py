@@ -161,55 +161,58 @@ class FourierShape(FoldersBuilder):
 
     def __init__(self, rootfolder, host):
         super().__init__(rootfolder, host)
-        self.mode_lst = list(range(self.n_begin, self.n_end+1))
-        self.d_result = None
+        self.mode_lst_int = list(range(self.n_begin, self.n_end+1))
+        self.mode_lst_str = [f'{mode_id}' for mode_id in self.mode_lst_int]
         self.bp_id_first, self.bp_id_last = self.get_bp_id_first_last()
 
+        self.df_lnorm_theta = None
+        self.d_result = None
 
-    """
-    def __init__(self, workfolder, host, bp_id_first=None, bp_id_last=None):
-        self.host = host
-        self.rootfolder = path.join(workfolder, host)
-        self.df_folder = path.join(self.rootfolder, 'l_theta')
-        self.an_folder = path.join(self.rootfolder, 'an_folder')
-        self.n_bead = self.d_n_bp[host]
-        self.bp_id_first = self.__set_bp_id_first(bp_id_first)
-        self.bp_id_last = self.__set_bp_id_last(bp_id_last)
-        self.df_name = path.join(self.df_folder, f'l_modulus_theta_{self.n_bead}_beads.csv')
-        self.df = None
-
-        self.__check_and_make_folders()
-    """
-
-    def make_fourier_amp_h5(self, last_frame):
+    def make_fourier_amp_h5(self):
         last_frame = self.get_last_frame()
-        d_result = {mode_id: list() for mode_id in self.mode_lst}
-
-        for frame_id in range(1, last_frame+1):
+        d_result = {mode_id: list() for mode_id in self.mode_lst_str}
+        self.set_df_lnorm_theta()
+        for frame_id in range(1, last_frame):
             df_filter = self.get_filter_df(frame_id)
-            for mode_id in self.mode_lst:
-                d_result[mode_id].append(self.get_an(mode_id, df_filter))
+            for mode_id in self.mode_lst_int:
+                d_result[f'{mode_id}'].append(self.get_an(mode_id, df_filter))
         self.d_result = d_result
+        save_d_result_to_hd5(self.fourier_amp_h5, self.mode_lst_str, self.d_result)
 
-        save_d_result_to_hd5(self.fourier_amp_h5, self.mode_lst, self.d_result)
-
-    def read_df_an(self, n_begin, n_end):
-        f_in = path.join(self.an_folder, f'an_{n_begin}_{n_end}_bpfirst{self.bp_id_first}_bplast{self.bp_id_last}.csv')
-        df_an = pd.read_csv(f_in)
-        return df_an
+    def read_fourier_amp_h5(self):
+        self.d_result = read_d_result_from_hd5(self.fourier_amp_h5, self.mode_lst_str)
 
     def get_last_frame(self):
         u = mda.Universe(self.dcre_pdb, self.dcre_dcd)
         return len(u.trajectory)
 
+    def set_df_lnorm_theta(self):
+        if self.df_lnorm_theta is None:
+            d_lnorm_theta = read_d_result_from_hd5(self.lnorm_theta_h5, LNormTheta.columns)
+            self.df_lnorm_theta = pd.DataFrame(d_lnorm_theta)    
+
     def get_filter_df(self, frame_id):
-        mask = (self.df['i'] == self.bp_id_first)
-        df0 = self.df[mask]
+        mask = (self.df_lnorm_theta['i'] == self.bp_id_first)
+        df0 = self.df_lnorm_theta[mask]
         mask = (df0['Frame_ID'] == frame_id)
         df1 = df0[mask]
         mask = (df1['j'].between(self.bp_id_first+1, self.bp_id_last))
         df2 = df1[mask]
         return df2
+
+    def get_an(self, n, df):
+        length_angstrom = df['|l_j|'].sum() # L, unit: angstrom
+        length_nm = df['|l_j|'].sum() / 10 # L, unit: nm
+        scale_factor = np.sqrt(2/length_nm)
+        delta_s_list = df['|l_j|'].tolist()
+        theta_list = df['theta'].tolist()
+        s_mid_list = FourierShape.get_s_mid_list(df)
+        summation = 0
+        for delta_s, theta, s_mid in zip(delta_s_list, theta_list, s_mid_list):
+            in_cos_term = n * np.pi / length_angstrom
+            cos_term = np.cos(in_cos_term * s_mid)
+            summation += delta_s * 0.1 * theta * cos_term
+        return scale_factor * summation
 
     def get_bp_id_first_last(self):
         start_end = {'atat_21mer': (3, 17), 'g_tract_21mer': (3, 17), 
@@ -217,137 +220,9 @@ class FourierShape(FoldersBuilder):
                      'ctct_21mer': (3, 17), 'tgtg_21mer': (3, 17),
                      'pnas_dna': (3, 12), 'pnas_dna': (3, 12)}
         return start_end[self.host][0], start_end[self.host][1]
-        
-
-    """
-    def get_appr_L(self):
-        # Unit: nm
-        return 0.34 * (self.bp_id_last - self.bp_id_first)
-        
-    def read_l_modulus_theta(self):
-        self.df =  pd.read_csv(self.df_name)
-
-    def get_L_of_frameid(self, frame_id):
-        df_filter = self.get_filter_df(frame_id)
-        L = self.__get_L(df_filter) # unit: angstrom
-        return L
-
-    def get_smid_and_interpolation_theta(self, frame_id):
-        df_filter = self.get_filter_df(frame_id)
-        theta_list = [0]
-        theta_list += self.__get_theta_list(df_filter)
-        n_theta = len(theta_list)
-        s_mid_list = self.__get_s_mid_list(df_filter)
-        interpolation_list = list()
-        for i in range(n_theta-1):
-            theta_inter = (theta_list[i] + theta_list[i+1]) / 2
-            interpolation_list.append(theta_inter)
-        return s_mid_list, interpolation_list
-
-
-    def get_an(self, n, df_filter):
-        L = self.__get_L(df_filter) # unit: angstrom
-        L_nm = L / 10 # unit: nm
-        delta_s_list = self.__get_delta_s_list(df_filter)
-        theta_list = self.__get_theta_list(df_filter)
-        s_mid_list = self.__get_s_mid_list(df_filter)
-        scale_factor = np.sqrt(2/L_nm)
-        summation = 0
-        for delta_s, theta, s_mid in zip(delta_s_list, theta_list, s_mid_list):
-            in_cos_term = n * np.pi / L
-            cos_term = np.cos(in_cos_term * s_mid)
-            summation += delta_s * 0.1 * theta * cos_term
-        return scale_factor * summation
-
-    def get_an_simplified(self, L, scale_factor, n, df_filter):
-        delta_s_list = self.__get_delta_s_list(df_filter)
-        theta_list = self.__get_theta_list(df_filter)
-        s_mid_list = self.__get_s_mid_list(df_filter)
-        summation = 0
-        for delta_s, theta, s_mid in zip(delta_s_list, theta_list, s_mid_list):
-            in_cos_term = n * np.pi / L
-            cos_term = np.cos(in_cos_term * s_mid)
-            summation += delta_s * 0.1 * theta * cos_term
-        return scale_factor * summation
-
-    def get_mode_shape_list(self, n, df_filter):
-        L = self.__get_L(df_filter) # unit: angstrom
-        L_nm = L / 10 # unit: nm
-        s_list = np.array(self.__get_s_list(df_filter))
-        scale_factor = np.sqrt(2/L_nm)
-        in_cos_term = (n * np.pi * s_list) / L
-        an = self.get_an(n, df_filter)
-        cos_list = an * scale_factor * np.cos(in_cos_term)
-        return s_list, cos_list
-
-    def get_cos_list(self, s_list, L, scale_factor, n, df_filter):
-        in_cos_term = (n * np.pi * s_list) / L
-        an = self.get_an_simplified(L, scale_factor, n, df_filter)
-        cos_list = an * scale_factor * np.cos(in_cos_term)
-        return cos_list
-
-    def get_cos_list_an(self, s_list, L, scale_factor, n, df_filter):
-        in_cos_term = (n * np.pi * s_list) / L
-        an = self.get_an_simplified(L, scale_factor, n, df_filter)
-        cos_list = an * scale_factor * np.cos(in_cos_term)
-        return cos_list, an
-
-    def get_slist_thetalist(self, frame_id):
-        df_filter = self.get_filter_df(frame_id)
-        s_list = self.__get_s_list(df_filter)
-        theta_list = self.__get_theta_list(df_filter)
-        s_list = [0] + list(s_list)
-        theta_list = [0] + theta_list
-        return s_list, theta_list
-
-    def get_approximate_theta(self, frame_id, n_begin, n_end):
-        df_filter = self.get_filter_df(frame_id)
-        L = self.__get_L(df_filter) # unit: angstrom
-        L_nm = L / 10 # unit: nm
-        scale_factor = np.sqrt(2/L_nm)
-        s_list = self.__get_s_list(df_filter)
-        appr_theta_list = np.zeros(len(s_list))
-        for n in range(n_begin, n_end+1):
-            cos_list = self.get_cos_list(s_list, L, scale_factor, n, df_filter)
-            if n == 0:
-                appr_theta_list += cos_list / 2
-            else:
-                appr_theta_list += cos_list
-        s_list = [0] + list(s_list)
-        appr_theta_list = [0] + list(appr_theta_list)
-        return s_list, appr_theta_list
-
-    def get_approximate_theta_singlemode(self, frame_id, n_select):
-        df_filter = self.get_filter_df(frame_id)
-        L = self.__get_L(df_filter) # unit: angstrom
-        L_nm = L / 10 # unit: nm
-        scale_factor = np.sqrt(2/L_nm)
-        s_list = self.__get_s_list(df_filter)
-        appr_theta_list = np.zeros(len(s_list))
-        for n in [0, n_select]:
-            cos_list, an = self.get_cos_list_an(s_list, L, scale_factor, n, df_filter)
-            if n == 0:
-                appr_theta_list += cos_list / 2
-            else:
-                appr_theta_list += cos_list
-        s_list = [0] + list(s_list)
-        appr_theta_list = [0] + list(appr_theta_list)
-        return s_list, appr_theta_list, an
-
-    
-
-    
-
-    def __get_L(self, df):
-        return df['|l_j|'].sum()
-        
-    def __get_theta_list(self, df):
-        return df['theta'].tolist()
-        
-    def __get_delta_s_list(self, df):
-        return df['|l_j|'].tolist()
-        
-    def __get_s_mid_list(self, df):
+   
+    @staticmethod
+    def get_s_mid_list(df):
         s_mid_list = np.zeros(df.shape[0])
         delta_s_list = df['|l_j|'].tolist()
         s_total = 0
@@ -356,18 +231,15 @@ class FourierShape(FoldersBuilder):
             s_total += delta_s
             s_mid_list[i] = s_mid
         return s_mid_list
-        
-    def __get_s_list(self, df):
-        s_list = np.zeros(df.shape[0])
-        delta_s_list = df['|l_j|'].tolist()
-        s_total = 0
-        for i, delta_s in enumerate(delta_s_list):
-            s_total += delta_s
-            s_list[i] = s_total
-        return s_list
 
-    def __check_and_make_folders(self):
-        for folder in [self.an_folder]:
-            check_dir_exist_and_make(folder)
-    """
-    
+
+class BigWindowPersistenceLength(FoldersBuilder):
+    def get_Lp_array(self, wn_id):
+        appr_L = self.get_appr_L()
+        Lp_list = list()
+        df = self.split_df_list[wn_id]
+        for n in self.n_list:
+            var_an = df[str(n)].var()
+            Lp = np.square(appr_L) / (np.square(n) * np.square(np.pi) * var_an)
+            Lp_list.append(Lp)
+        return np.array(Lp_list)
