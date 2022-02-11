@@ -4,6 +4,7 @@ import MDAnalysis as mda
 import numpy as np
 import pandas as pd
 from miscell.hd5_util import save_d_result_to_hd5, read_d_result_from_hd5
+from miscell.pd_util import write_csv
 from curves.curves_main_util import PreliminaryAgent
 from miscell.file_util import check_dir_exist_and_make, check_file_exist, copy_verbose
 from miscell.na_bp import d_n_bp
@@ -23,6 +24,9 @@ class FoldersBuilder(PreliminaryAgent):
 
         self.lnorm_theta_h5 = path.join(self.bend_shape_folder, 'l_norm_theta.hdf5')
         self.fourier_amp_h5 = path.join(self.bend_shape_folder, 'fourier_amplitude.hdf5')
+
+        self.lp_big_wn_csv = path.join(self.bend_shape_folder, 'persistence_length_big_wn.csv')
+        self.lp_small_wn_csv = path.join(self.bend_shape_folder, 'persistence_length_small_wn.csv')
 
     def initialize_folders(self):
         for folder in [self.haxis_discretize_folder, self.discre_pdb_dcd_folder, self.bend_shape_folder]:
@@ -233,13 +237,89 @@ class FourierShape(FoldersBuilder):
         return s_mid_list
 
 
-class BigWindowPersistenceLength(FoldersBuilder):
-    def get_Lp_array(self, wn_id):
-        appr_L = self.get_appr_L()
-        Lp_list = list()
-        df = self.split_df_list[wn_id]
-        for n in self.n_list:
-            var_an = df[str(n)].var()
-            Lp = np.square(appr_L) / (np.square(n) * np.square(np.pi) * var_an)
-            Lp_list.append(Lp)
-        return np.array(Lp_list)
+class BigWindowPersistenceLength(FourierShape):
+
+    def __init__(self, rootfolder, host):
+        super().__init__(rootfolder, host)
+        self.appr_length = 0.34 * (self.bp_id_last - self.bp_id_first) # Unit: nm
+        self.columns = [f'n={mode_id}' for mode_id in self.mode_lst_str]
+        self.df_lp = None
+
+    def make_lp_big_wn_csv(self):
+        df_an = self.get_df_an()
+        d_result = self.get_lp_d_result(df_an)
+        write_csv(self.lp_big_wn_csv, d_result, self.columns)
+
+    def read_lp_big_wn_csv(self):
+        self.df_lp = pd.read_csv(self.lp_big_wn_csv)
+        print(f'Read {self.lp_big_wn_csv} into df_lp')
+
+    def get_lp_d_result(self, df_an):
+        d_result = {f'{key}': list() for key in self.columns}
+        for mode_id in self.mode_lst_int:
+            var_an = df_an[f'{mode_id}'].var()
+            lp = BigWindowPersistenceLength.get_lp(self.appr_length, mode_id, var_an)
+            d_result[f'n={mode_id}'].append(lp)
+        return d_result
+
+    def get_df_an(self):
+        d_fourier_amp = read_d_result_from_hd5(self.fourier_amp_h5, self.mode_lst_str)
+        self.df_an = pd.DataFrame(d_fourier_amp)
+
+    @staticmethod
+    def get_lp(appr_length, mode_id, var_an):
+        return np.square(appr_length) / (np.square(mode_id) * np.square(np.pi) * var_an)
+
+class SmallWindowPersistenceLength(BigWindowPersistenceLength):
+    def __init__(self, rootfolder, host, n_frames_per_window):
+        super().__init__(rootfolder, host)
+        self.n_frames_per_window = n_frames_per_window
+        self.split_frame_list = None
+        self.n_window = None
+        self.columns = ['wn-id'] + [f'n={mode_id}' for mode_id in self.mode_lst_str]
+        self.df_an_big_wn = self.get_df_an()
+
+    def print_avg_std(self, mode_id):
+        avg = self.df_lp[f'n={mode_id}'].mean()
+        std = self.df_lp[f'n={mode_id}'].std()
+        print(f'Mode-ID: {mode_id}')
+        print(f'Lp ={avg:.1f}±{std:.1f}')
+
+    def make_lp_small_wn_csv(self):
+        if self.split_frame_list is None:
+            self.set_split_frame_list()
+        d_result = {key: list() for key in self.columns}
+        d_result['wn-id'] = list(range(self.n_window))
+        for window_id in range(self.n_window):
+            df_an_small_wn = self.get_df_an_small_wn(window_id)
+            d_result_wn = self.get_lp_d_result(df_an_small_wn)
+            for mode_id in self.mode_lst_int:
+                d_result[f'n={mode_id}'].append(d_result_wn[f'n={mode_id}'][0])
+        write_csv(self.lp_small_wn_csv, d_result, self.columns)
+
+    def read_lp_small_wn_csv(self):
+        self.df_lp = pd.read_csv(self.lp_small_wn_csv)
+        print(f'Read {self.lp_small_wn_csv} into df_lp')
+
+    def get_df_an_small_wn(self, window_id):
+        frame_id_start, frame_id_end = self.split_frame_list[window_id]
+        return self.df_an_big_wn.iloc[frame_id_start:frame_id_end+1]
+
+    def set_split_frame_list(self):
+        n_total_frames = self.get_last_frame()
+        middle_interval = self.n_frames_per_window / 2
+        split_frame_list = list()
+
+        frame_id_1 = 0
+        frame_id_2 = frame_id_1 + self.n_frames_per_window - 1
+
+        execute_loop = True
+        while execute_loop:
+            if frame_id_2 > (n_total_frames + 1):
+                execute_loop = False
+                break
+            split_frame_list.append((int(frame_id_1), int(frame_id_2)))
+            frame_id_1 += middle_interval
+            frame_id_2 = frame_id_1 + self.n_frames_per_window - 1
+        self.split_frame_list = split_frame_list
+        self.n_window = len(split_frame_list)
