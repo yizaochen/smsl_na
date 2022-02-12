@@ -1,0 +1,5 @@
+setup.py
+trajectory.egg-info/PKG-INFO
+trajectory.egg-info/SOURCES.txt
+trajectory.egg-info/dependency_links.txt
+trajectory.egg-info/top_level.txt

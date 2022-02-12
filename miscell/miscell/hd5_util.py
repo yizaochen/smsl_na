@@ -1,6 +1,19 @@
 import h5py
 import numpy as np
 
+def save_array_to_hd5(h5_name, key, data_array):
+    h5_handle = h5py.File(h5_name, 'w') 
+    h5_handle.create_dataset(key, data=data_array)
+    h5_handle.close()
+    print(f'make {h5_name}')
+
+def read_array_from_hd5(h5_name, key):
+    h5_handle = h5py.File(h5_name, 'r')
+    data_array = np.array(h5_handle.get(f'{key}'))
+    h5_handle.close()
+    print(f'Read {h5_name}')
+    return data_array
+
 def save_d_result_to_hd5(h5_name, columns, d_result):
     h5_handle = h5py.File(h5_name, 'w') 
     for key in columns:
