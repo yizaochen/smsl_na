@@ -222,7 +222,7 @@ class FourierShape(FoldersBuilder):
         start_end = {'atat_21mer': (3, 17), 'g_tract_21mer': (3, 17), 
                      'a_tract_21mer': (3, 17), 'gcgc_21mer': (3, 17),
                      'ctct_21mer': (3, 17), 'tgtg_21mer': (3, 17),
-                     'pnas_dna': (3, 12), 'pnas_dna': (3, 12)}
+                     'pnas_dna': (3, 12), 'pnas_rna': (3, 12)}
         return start_end[self.host][0], start_end[self.host][1]
    
     @staticmethod
@@ -264,7 +264,7 @@ class BigWindowPersistenceLength(FourierShape):
 
     def get_df_an(self):
         d_fourier_amp = read_d_result_from_hd5(self.fourier_amp_h5, self.mode_lst_str)
-        self.df_an = pd.DataFrame(d_fourier_amp)
+        return pd.DataFrame(d_fourier_amp)
 
     @staticmethod
     def get_lp(appr_length, mode_id, var_an):
@@ -280,6 +280,8 @@ class SmallWindowPersistenceLength(BigWindowPersistenceLength):
         self.df_an_big_wn = self.get_df_an()
 
     def print_avg_std(self, mode_id):
+        if self.df_lp is None:
+            self.read_lp_small_wn_csv()
         avg = self.df_lp[f'n={mode_id}'].mean()
         std = self.df_lp[f'n={mode_id}'].std()
         print(f'Mode-ID: {mode_id}')
