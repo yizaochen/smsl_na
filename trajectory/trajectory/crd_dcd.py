@@ -47,7 +47,9 @@ class AvgcrdFitdcd:
 
     def setup_pdb_dcd(self, exec):
         if exec:
-            pass
+            agent = Preliminary(self.rootfolder, self.suffix, self.host)
+            agent.gro2pdb()
+            agent.split_pdb_to_2_strands()
 
     def pdb2crd(self, exec):
         if exec:
@@ -95,7 +97,25 @@ class Preliminary(AvgcrdFitdcd):
         system(f'{self.gmx} editconf -f {self.npt4_gro} -o {self.npt4_pdb}')
 
     def split_pdb_to_2_strands(self):
+        n_atom_lst = StrandNatom(self.host, self.type_na).get_n_atom_lst()
+        pdb_lst = [self.strand1_pdb, self.strand2_pdb]
+        with open(self.npt4_pdb, 'r') as f:
+            lines = f.readlines()
+        line_id = 4
+        for n_atom, pdb in zip(n_atom_lst, pdb_lst):
+            self.write_pdb_by_lines(pdb, lines[line_id:line_id+n_atom])
+            line_id += n_atom
+
+    def pdb_gro2charmm(self):
         pass
+
+    @staticmethod
+    def write_pdb_by_lines(pdb, lines):
+        with open(pdb, 'w') as f:
+            for line in lines:
+                f.write(line)
+        print(f'write {pdb}')
+        
 
 class StrandNatom:
 
