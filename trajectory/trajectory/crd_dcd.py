@@ -1,11 +1,13 @@
-from os import path
-from miscell.file_util import check_dir_exist_and_make, check_file_exist, copy_verbose
+from os import path, system
+from miscell.file_util import check_dir_exist_and_make, copy_verbose
+from miscell.na_seq import d_sequences
 
 class AvgcrdFitdcd:
     def __init__(self, rootfolder, suffix, host):
         self.rootfolder = rootfolder # '/home/ytcdata/traj/'
         self.suffix = suffix # 'test', 'before_clean', 'after_clean'
         self.host = host
+        self.type_na = self.get_type_na()
 
         self.host_folder = path.join(self.rootfolder, self.host)
         self.suffix_folder = path.join(self.host_folder, self.suffix)
@@ -67,6 +69,11 @@ class AvgcrdFitdcd:
         if exec:
             pass
 
+    def get_type_na(self):
+        if self.host in ['pnas_rna']:
+            return 'arna+arna'
+        else:
+            return 'bdna+bdna'
     
 class FoldersBuilder(AvgcrdFitdcd):
 
@@ -76,13 +83,52 @@ class FoldersBuilder(AvgcrdFitdcd):
 
     def copy_input_gro_xtc(self):
         old_rootfolder = '/home/yizaochen/codes/dna_rna/all_systems'
-        if self.host in ['pnas_rna']:
-            type_na = 'arna+arna'
-        else:
-            type_na = 'bdna+bdna'
-        old_gro = path.join(old_rootfolder, self.host, type_na, 'input', f'{type_na}.npt4.all.gro')
-        old_xtc = path.join(old_rootfolder, self.host, type_na, 'input', f'{type_na}.all.xtc')
+        old_gro = path.join(old_rootfolder, self.host, self.type_na, 'input', f'{self.type_na}.npt4.all.gro')
+        old_xtc = path.join(old_rootfolder, self.host, self.type_na, 'input', f'{self.type_na}.all.xtc')
         copy_verbose(old_gro, self.npt4_gro)
         copy_verbose(old_xtc, self.raw_xtc)
 
-    
+class Preliminary(AvgcrdFitdcd):
+    gmx = '/usr/bin/gmx'
+
+    def gro2pdb(self):
+        system(f'{self.gmx} editconf -f {self.npt4_gro} -o {self.npt4_pdb}')
+
+    def split_pdb_to_2_strands(self):
+        pass
+
+class StrandNatom:
+
+    def __init__(self, host, type_na):
+        self.host = host
+        self.type_na = type_na
+        self.n_atom_lst = None
+
+    def get_n_atom_lst(self):
+        if self.n_atom_lst is None:
+            self.set_n_atom_lst()
+        return self.n_atom_lst
+
+    def set_n_atom_lst(self):
+        d_5_prime, d_central, d_3_prime = self.get_three_dict()
+        n_atom_lst = list()
+        for strand_name in ['guide', 'target']:
+            seq = d_sequences[self.host][strand_name]
+            n_atom = 0
+            n_atom += d_5_prime[seq[0]]
+            for nt in seq[1:-1]:
+                n_atom += d_central[nt]
+            n_atom += d_3_prime[-1]
+            n_atom_lst.append(n_atom)
+        self.n_atom_lst = n_atom_lst
+
+    def get_three_dict(self):
+        if self.type_na == 'bdna+bdna':
+            d_5_prime = {'A': 30, 'T': 30, 'C': 28, 'G': 31}
+            d_central = {'A': 32, 'T': 32, 'C': 30, 'G': 33}
+            d_3_prime = {'A': 33, 'T': 33, 'C': 31, 'G': 34}
+        else:
+            d_5_prime = {'A': 31, 'U': 28, 'C': 29, 'G': 32}
+            d_central = {'A': 33, 'U': 30, 'C': 31, 'G': 34}
+            d_3_prime = {'A': 34, 'U': 31, 'C': 32, 'G': 35}
+        return d_5_prime, d_central, d_3_prime
