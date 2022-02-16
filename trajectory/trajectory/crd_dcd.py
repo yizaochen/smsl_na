@@ -1,6 +1,8 @@
 from os import path, system
 from miscell.file_util import check_dir_exist_and_make, copy_verbose
 from miscell.na_seq import d_sequences
+from pdb_util.atom import Atom
+
 
 class AvgcrdFitdcd:
     def __init__(self, rootfolder, suffix, host):
@@ -28,8 +30,8 @@ class AvgcrdFitdcd:
     def main(self, exe_build_folder, exe_vmd_check_input_gro_xtc, exe_setup_pdb_dcd, exe_pdb2crd, exe_remove_hydrogen, exe_make_avg_crd, exe_make_fit_dcd, exe_vmd_check_output_crd_dcd):
         self.build_folder(exe_build_folder)
         self.vmd_check_input_gro_xtc(exe_vmd_check_input_gro_xtc)
-        self.setup_pdb_dcd(exe_setup_pdb_dcd)
-        self.pdb2crd(exe_pdb2crd) # Make CRD (split two strands, then combine) 
+        self.setup_pdb_dcd(exe_setup_pdb_dcd) # split two strands
+        self.pdb2crd(exe_pdb2crd) # Make CRD (combine two strands) 
         self.remove_hydrogen(exe_remove_hydrogen) # Make CRD and DCD without hydrogen atoms
         self.make_avg_crd(exe_make_avg_crd) # Make Average CRD 
         self.make_fit_dcd(exe_make_fit_dcd) # fitting no-H dcd to average crd
@@ -103,18 +105,61 @@ class Preliminary(AvgcrdFitdcd):
             lines = f.readlines()
         line_id = 4
         for n_atom, pdb in zip(n_atom_lst, pdb_lst):
-            self.write_pdb_by_lines(pdb, lines[line_id:line_id+n_atom])
-            line_id += n_atom
+            FormatProcessor(pdb, lines[line_id:line_id+n_atom]).gromacs_format_to_charmm_format()
 
-    def pdb_gro2charmm(self):
-        pass
+
+class FormatProcessor:
+    # gromacs-format pdb to charmm-format pdb
+    # based on https://github.com/yizaochen/fluctmatch/blob/master/shell_scripts/pdb_gro2charmm.sh
+
+    def __init__(self, lines, pdb_out):
+        self.lines = lines
+        self.pdb_out = pdb_out
+
+    def gromacs_format_to_charmm_format(self):
+        atomgroup = self.get_atomgroup(self.lines)
+        for atom in atomgroup:
+            self.reset_resname(atom)
+            self.reset_name(atom)
+        self.write_pdb(self.pdb_out, atomgroup, verbose=True)
 
     @staticmethod
-    def write_pdb_by_lines(pdb, lines):
+    def reset_resname(atom):
+        if atom.resname in ['DA5P', 'RA5P', 'DA5', 'RA5', 'DA3', 'RA3', 'DA', 'RA']:
+            atom.set_resname('ADE')
+        elif atom.resname in ['DT5P', 'RT5P', 'DT5', 'RT5', 'DT3', 'RT3', 'DT', 'RT']:
+            atom.set_resname('THY')
+        elif atom.resname in ['DC5P', 'RC5P', 'DC5', 'RC5', 'DC3', 'RC3', 'DC', 'RC']:
+            atom.set_resname('CYT')
+        elif atom.resname in ['DG5P', 'RG5P', 'DG5', 'RG5', 'DG3', 'RG3', 'DG', 'RG']:
+            atom.set_resname('GUA')
+        elif atom.resname in ['DU5P', 'RU5P', 'DU5', 'RU5', 'DU3', 'RU3', 'DU', 'RU']:
+            atom.set_resname('URA')
+
+    @staticmethod
+    def reset_name(atom):
+        if atom.name in ["1H5'", "2H5'", "1H2'", "2H2'", "2HO'", "1H6", "2H6", "1H4", "2H4"]:
+            d_atomname_map = {"1H5'": "H5'", "2H5'": "H5''", "1H2'": "H2'",  "2H2'": "H2''", 
+                              "2HO'": "H2''", "1H6": "H61", "2H6": "H62",  "1H4": "H41", "2H4": "H42"}
+            atom.set_name(d_atomname_map[atom.name])
+
+    @staticmethod
+    def get_atomgroup(lines):
+        atomgroup = list()
+        for line in lines:
+            atomgroup.append(Atom(line, segid_exist=False))
+        return atomgroup
+    
+    @staticmethod
+    def write_pdb(pdb, atomgroup, verbose=False):
         with open(pdb, 'w') as f:
-            for line in lines:
-                f.write(line)
-        print(f'write {pdb}')
+            f.write('REMARK\n')
+            for atom in atomgroup:
+                strout = atom.get_format_str_pdb()
+                f.write(f'{strout}\n')
+            f.write('END')
+        if verbose:
+            print(f'Write PDB: {pdb}')
         
 
 class StrandNatom:

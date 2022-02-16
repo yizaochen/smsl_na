@@ -13,6 +13,9 @@ class Atom:
         if segid_exist:
             self.segid = data[10]
 
+    def set_name(self, name):
+        self.name = name
+
     def set_resid(self, resid):
         self.resid = int(resid)
 

@@ -1,5 +1,5 @@
 import numpy as np
-from pdb_util import atom
+from pdb_util.atom import Atom
 
 class PDBReader:
     """
@@ -12,16 +12,16 @@ class PDBReader:
         self.skip_header = skip_header
         self.skip_footer = skip_footer
         self.segid_exist = segid_exist
-        self.atomgroup = self._read_pdb()
+        self.atomgroup = self.read_pdb()
 
     def get_atomgroup(self):
         return self.atomgroup
 
-    def _read_pdb(self):
+    def read_pdb(self):
         lines = np.genfromtxt(self.fname, skip_header=self.skip_header, skip_footer=self.skip_footer, dtype=str)
         atomgroup = list()
         for line in lines:
-            atomgroup.append(atom.Atom(line, self.segid_exist))
+            atomgroup.append(Atom(line, self.segid_exist))
         return atomgroup
 
 
